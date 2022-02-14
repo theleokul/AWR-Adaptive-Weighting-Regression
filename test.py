@@ -4,6 +4,7 @@ from tqdm import tqdm
 import numpy as np
 
 import torch
+import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 from torchnet import meter
@@ -16,6 +17,7 @@ from util.feature_tool import FeatureModule
 from util.eval_tool import EvalUtil
 from util.vis_tool import VisualUtil
 from config import opt
+from util.util import topil, totensor, count_parameters
 
 class Trainer(object):
 
@@ -38,21 +40,32 @@ class Trainer(object):
             net_layer = int(self.config.net.split('_')[1])
             self.net = get_deconv_net(net_layer, self.config.jt_num, self.config.downsample)
         elif 'hourglass' in self.config.net:
+            # 4.5M params
             self.stacks = int(self.config.net.split('_')[1])
             self.net = PoseNet(self.config.net, self.config.jt_num)
-        self.net = self.net.cuda()
+        elif 'mobilenet' in self.config.net:
+            # 3.5M params
+            self.net = torch.hub.load('pytorch/vision:v0.10.0', 'mobilenet_v2', pretrained=True)
+            self.net.classifier = nn.Identity()  # 1280 channels
+            
+        # self.net = self.net.cuda()
+        self.net = self.net.cpu()
+        
+        count_parameters(self.net)
 
         if self.config.load_model :
             print('loading model from %s' % self.config.load_model)
             pth = torch.load(self.config.load_model)
             self.net.load_state_dict(pth['model'])
             print(pth['best_records'])
-        self.net = self.net.cuda()
+        # self.net = self.net.cuda()
+        self.net = self.net.cpu()
 
         if self.config.dataset == 'nyu':
             self.testData = NYU(self.data_dir, 'test', img_size=self.config.img_size, cube=self.config.cube)
         
-        self.criterion = My_SmoothL1Loss().cuda()
+        # self.criterion = My_SmoothL1Loss().cuda()
+        self.criterion = My_SmoothL1Loss().cpu()
 
         self.FM = FeatureModule()
 
@@ -66,11 +79,13 @@ class Trainer(object):
         loss_meter = meter.AverageValueMeter()
         for ii, (img, jt_xyz_gt, jt_uvd_gt, center_xyz, M, cube) in tqdm(enumerate(self.testLoader)):
 
-            input = img.cuda()
+            # input = img.cuda()
+            input = img.cpu()
             loss = 0
-            self.ft_sz = int(self.config.img_size / self.config.downsample)
-            jt_uvd_gt = jt_uvd_gt.cuda()
-            offset_gt = self.FM.joint2offset(jt_uvd_gt, input, self.config.kernel_size, self.ft_sz)
+            self.ft_sz = int(self.config.img_size / self.config.downsample)  # 128 / 2 = 64
+            # jt_uvd_gt = jt_uvd_gt.cuda()
+            jt_uvd_gt = jt_uvd_gt.cpu()
+            offset_gt = self.FM.joint2offset(jt_uvd_gt, input, self.config.kernel_size, self.ft_sz)  # kernel_size = 0.4
             if 'hourglass' in self.config.net:
                 for stage_idx in range(self.stacks):
                     offset_pred = self.net(input)[stage_idx]
@@ -78,6 +93,7 @@ class Trainer(object):
                     loss_coord = self.config.coord_weight * self.criterion(jt_uvd_pred, jt_uvd_gt)
                     loss_offset = self.config.dense_weight * self.criterion(offset_pred, offset_gt)
                     loss += (loss_coord + loss_offset)
+                    # import ipdb; ipdb.set_trace()
             else:
                 offset_pred = self.net(input)
                 jt_uvd_pred = self.FM.offset2joint_softmax(offset_pred, input, self.config.kernel_size)

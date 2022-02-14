@@ -80,12 +80,14 @@ class NYU(Loader):
         label_path = '{}/joint_data.mat'.format(data_path)
         center_path = '{}/center_{}_refined.txt'.format(self.root, self.phase)
 
-        data = sorted(glob(data_path + '/depth_1*.png'))
+        # rgb = sorted(glob(data_path + '/rgb_1*.png'))
+        depth = sorted(glob(data_path + '/depth_1*.png'))
         labels = sio.loadmat(label_path)
+        # u, v - camera projection coordiantes, d - depth, probably
         labels_uvd = labels['joint_uvd'][0][:, JOINT, :][:, EVAL, :]
         labels_xyz = labels['joint_xyz'][0][:, JOINT, :][:, EVAL, :]
         center_refined_xyz = np.loadtxt(center_path)
-        item = list(zip(data, labels_uvd, labels_xyz, center_refined_xyz))
+        item = list(zip(depth, labels_uvd, labels_xyz, center_refined_xyz))
 
         return item
 

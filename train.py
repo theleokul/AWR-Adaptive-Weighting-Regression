@@ -4,6 +4,7 @@ from tqdm import tqdm
 import numpy as np
 
 import torch
+import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 from torch.optim import Adam, SGD
@@ -54,7 +55,24 @@ class Trainer(object):
         elif 'hourglass' in self.config.net:
             self.stacks = int(self.config.net.split('_')[1])
             print_msg('hourglass stacks:{}'.format(self.stacks), file=self.log)
-            self.net = PoseNet(self.config.net, self.config.jt_num)
+            self.net = PoseNet(self.config.net, self.config.jt_num)            
+        elif 'mobilenet' in self.config.net:
+            self.net = torch.hub.load('pytorch/vision:v0.10.0', 'mobilenet_v2', pretrained=True).features
+            self.net[0][0] = nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1)  # Input - depth map
+            self.net[4] = nn.Sequential(
+                nn.Conv2d(24, 48, kernel_size=3, padding=1),
+                nn.BatchNorm2d(48),
+                nn.ReLU6(),
+                
+                nn.Conv2d(48, 56, kernel_size=3, padding=1),
+                nn.BatchNorm2d(56),
+                nn.ReLU6(),
+                
+                nn.Conv2d(56, 56, kernel_size=1)
+            )
+            self.net = self.net[:5]
+            self.net.train()
+            
         self.net = self.net.cuda()
 
         # init dataset, you can add other datasets
@@ -89,7 +107,7 @@ class Trainer(object):
         if self.config.scheduler == 'auto':
             self.scheduler = ReduceLROnPlateau(self.optimizer, "min", patience=2, min_lr=1e-8)
         elif self.config.scheduler == 'step':
-            self.scheduler = StepLR(self.optimizer, step_size=self.config.step, gamma=0.1, last_epoch=self.best_records['epoch'])
+            self.scheduler = StepLR(self.optimizer, step_size=self.config.step, gamma=0.1, last_epoch=-1)  # self.best_records['epoch'])
 
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.config.lr
@@ -229,8 +247,8 @@ class Trainer(object):
 
 
 if __name__=='__main__':
-    from config import opt
+    from config_mobilenet import opt
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     trainer = Trainer(opt)
-    trainer.test()
-    # trainer.train()
+    # trainer.test()
+    trainer.train()

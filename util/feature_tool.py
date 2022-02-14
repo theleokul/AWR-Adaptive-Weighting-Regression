@@ -22,20 +22,25 @@ class FeatureModule:
 
         mesh_x = 2.0 * (torch.arange(feature_size).unsqueeze(0).expand(feature_size, feature_size).float() + 0.5) / feature_size - 1.0
         mesh_y = 2.0 * (torch.arange(feature_size).unsqueeze(1).expand(feature_size, feature_size).float() + 0.5) / feature_size - 1.0
-        coords = torch.stack((mesh_x, mesh_y), dim=0)
+        coords = torch.stack((mesh_x, mesh_y), dim=0) # (2, F=64, F=64)
         coords = coords.unsqueeze(0).repeat(batch_size, 1, 1, 1).to(jt_uvd.device) # (B, 2, F, F)
         coords = torch.cat((coords, img), dim=1).repeat(1, jt_num, 1, 1) # (B, jt_num*3, F, F)
 
+        # Offset from each joint on every cell
         offset = jt_ft - coords # (B, jt_num*3, F, F)
         offset = offset.view(batch_size, jt_num, 3, feature_size, feature_size) # (B, jt_num, 3, F, F)
         dis = torch.sqrt(torch.sum(torch.pow(offset, 2), dim=2) + 1e-8) # (B, jt_num, F, F)
 
         offset_norm = offset / dis.unsqueeze(2) # (B, jt_num, 3, F, F)
+        # heatmap - relative distance to 0.4 (it seems like a hyperparameter for dense representation)
         heatmap = (kernel_size - dis) / kernel_size # (B, jt_num, F, F)
+        # Distance above 0.4 is ignored, 0.99 - filters background (background = 1)
         mask = heatmap.ge(0).float() * img.lt(0.99).float() # (B, jt_num, F, F)
 
-        offset_norm_mask =  (offset_norm * mask.unsqueeze(2)).view(batch_size, -1, feature_size, feature_size)
+        offset_norm_mask = (offset_norm * mask.unsqueeze(2)).view(batch_size, -1, feature_size, feature_size)
         heatmap_mask = heatmap * mask.float()
+        
+        # C = (14 * 3 = 42 for offsets) + (14 for heatmap) = 56
         return torch.cat((offset_norm_mask, heatmap_mask), dim=1).float()
 
     def offset2joint_softmax(self, offset, img, kernel_size):

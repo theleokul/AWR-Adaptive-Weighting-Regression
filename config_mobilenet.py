@@ -18,7 +18,7 @@ EPOCH = {
 }
 class Config(object):
     gpu_id = 0
-    exp_id = "nyu_hourglass"
+    exp_id = "nyu_mobilenet"
     log_id = "dense"
 
     data_dir = './data'
@@ -30,9 +30,9 @@ class Config(object):
     cube = [300, 300, 300]
     augment_para = [10, 0.1, 180]
 
-    net = 'hourglass_1'  # 'hourglass_1' # 'resnet_18'
-    downsample = 2 # [1,2,4]
-    img_size = 128
+    net = 'mobilenet'  # 'hourglass_1' # 'resnet_18'
+    downsample = 4 # [1,2,4]
+    img_size = 256
     batch_size = 32
     num_workers = 8
     max_epoch = EPOCH[dataset]
@@ -50,4 +50,3 @@ class Config(object):
 
 
 opt = Config()
-
